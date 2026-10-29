@@ -30,3 +30,14 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# 本地 Python 环境与验证素材（模型几 GB，绝不入库）
+_env/
+__pycache__/
+*.pyc
+
+
+# musicdl 的下载/缓存残留
+assets/audio/*/*/
+*.pkl
+

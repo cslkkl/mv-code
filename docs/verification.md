@@ -18,6 +18,68 @@
 
 ## 跑通的
 
+### 0. musicdl：装通、搜到、下到
+
+```bash
+uv pip install --python _env/py312/Scripts/python.exe musicdl
+→ musicdl, version 2.14.2
+→ 57 clients
+```
+
+真实搜索 + 下载（《那些年》胡夏，网易云）：
+
+```
+PICK: 那些年 胡夏 flac 233.92 MB 00:05:32
+NeteaseMusicClient._download >>> 那些年 (Success) -- 100%
+```
+
+落盘：
+
+```
+那些年 - 97357.flac   245,528,453 bytes   (flac, 192000 Hz, 2ch, 371.08s)
+那些年 - 97357.lrc        2,921 bytes
+```
+
+**★ 关键发现：musicdl 顺带给了官方 LRC。** 这比 Whisper 准一个数量级，直接成了首选路线。
+
+音频规格过高（192kHz/245MB），转 48kHz MP3 后 **9.87 MB**，差 25 倍，MV 完全够用。
+
+### 0.5 LRC → SRT
+
+```bash
+python assets/scripts/lrc2srt.py 那些年.lrc lyrics.srt --audio-duration 371.08 --merge
+→ 完成：72 条字幕
+```
+
+```
+18.100 → 20.890  又回到最初的起点
+20.890 → 24.240  记忆中你青涩的脸
+24.240 → 30.330  我们终于来到了这一天      ← 「我们终于 / 来到了这一天」已合并
+30.330 → 33.460  桌垫下的老照片
+```
+
+`srt.js` 解析验证：72 条、首条 `t0=18.1`、**重叠 0**。
+
+### 0.6 Whisper 兜底路线
+
+```
+faster_whisper 1.2.1 / ctranslate2 4.8.4
+```
+
+装通、跑通。中文默认输出**繁体**，用 `initial_prompt` 压回简体后正常。
+
+三档准确率实测（同一段 45 秒）：
+
+| 模型 | 输出 |
+|---|---|
+| small | 捉点下的老照片 / 奔着西沙 红色零带的街 / 将头发竖尘大人模样 |
+| **medium** | 桌垫下的老照片 / 笨拙细杀红色领带的街 / 将头发梳成大人模样 |
+| 官方 LRC | 桌垫下的老照片 / 笨拙系上红色领带的结 / 将头发梳成大人模样 |
+
+**结论：中文用 medium，别用 small；能用 LRC 就别用 Whisper。**
+
+`--split comma`（按标点切成一句一条）实测：8 条 → 12 条，时间按字数比例分配，`srt.js` 解析无重叠。
+
 ### 1. 模板 → 工程 → check
 
 从 `assets/templates/` 复制出来的工程，`npx hyperframes check`：
@@ -66,7 +128,20 @@ npx hyperframes audio assets/audio/song.mp3 --only bpm,beats,sections,onsets,mom
 "loudness": { "lufsIntegrated": -34.1, "truePeakDb": -17.9 }
 ```
 
-4.5 秒的短样本会返回 `bpm.value: null` + `beats.reason: "too short for a steady beat"` —— 文档里的降级策略就是照这个写的。
+**真实歌曲**（《那些年》，5:32）的输出 —— 这条更能说明问题：
+
+```json
+"bpm": { "value": 157.9 },
+"beats": { "confidence": 0.194, "times": [ ... 955 个点 ] },
+"sections": { "spans": [ 17 段 A..P ] },
+"moments": { "peak": 304.084, "tailEnd": 367.776 },
+"loudness": { "lufsIntegrated": -9.4 }
+```
+
+⚠ 这首歌实际约 78 BPM，工具报 **157.9** —— 正好双倍。`confidence` 只有 **0.194** 就是在说
+「这个数不可信」。文档里 `confidence < 0.4 改看 onset` 的规则就是照这个写的。
+
+4.5 秒的短样本会返回 `bpm.value: null` + `beats.reason: "too short for a steady beat"` —— 同理。
 
 ### 5. 节拍点落盘
 
@@ -151,18 +226,37 @@ Captions skipped — whisper-cpp not found.
 whisper-cpp  ok: false  Not found (optional — needed for transcription)
 ```
 
-需要按 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 自编译二进制，或改用 Python 的 `faster-whisper`（文档给的替代路径）。
+需要按 [whisper.cpp](https://github.com/ggml-org/whisper.cpp) 自编译二进制。
+**已在 skill 内用 `assets/scripts/transcribe.py`（faster-whisper）绕开**，实测可用，见上文第 0.6 节。
 
-**注意**：`faster-whisper` 在本机也没装上 —— `uv pip install` 反复卡在 `scipy` / `onnxruntime` 的缓存锁（`Failed to acquire lock on the client cache`），换独立 `UV_CACHE_DIR`、清进程重试均未通过，最后手工终止。这条路径的命令按官方文档写，**首次使用需自行确认**。
+### （已解决）musicdl 之前的安装失败
 
-### `musicdl` 的真实下载
+第一轮 `pip install musicdl` / `uv pip install faster-whisper` 卡在
+`Failed to acquire lock on the client cache`（scipy / onnxruntime 的缓存锁）。
 
-同上，`pip install musicdl` 在本机网络下没完成（依赖解析卡住）。文档按官方 README 给的 CLI 与 Python API 都是准确的（已读 PyPI 2.14.2 的 README 原文校验），但**没有在本机实际下过一首歌**。
+**根因是两个 uv 进程并发 + 残留锁**，不是包本身装不上。清理后换独立
+`UV_CACHE_DIR`，两个包都装通了：
+
+```
++ musicdl-2.14.2
++ faster-whisper-1.2.1
++ ctranslate2-4.8.4
++ onnxruntime-1.31.1
+```
+
+### `huggingface_hub` 下模型 401（已解决）
+
+```
+RuntimeError: CAS Client Error: HTTP status client error (401 Unauthorized),
+domain: https://cas-server.xethub.hf.co/v2/reconstructions/...
+```
+
+xet 加速端点被拒。设 `HF_HUB_DISABLE_XET=1`（配合 `HF_ENDPOINT=https://hf-mirror.com`）
+后正常下载。这条已写进 `00-setup.md`。
 
 ## 文档里标注为「官方资料、本机未验证」的清单
 
-- `hyperframes transcribe` 的完整参数行为
-- `musicdl` 各平台的可用性与限流表现
-- 3 分钟以上、40+ 镜头的长片渲染耗时（只有 6 秒样本的实测数）
 - `hyperframes publish` / `cloud` / `lambda` 等部署命令（本 skill 不用，未测）
+- `librosa` 的 `beat_track` 交叉验证（`hyperframes audio` 已够用，没装）
 - macOS / Linux 上的表现（本次全部在 Windows 11 上做）
+- 3 分钟以上、40+ 镜头的长片渲染耗时（只有 6 秒样本的实测数）

@@ -95,29 +95,75 @@ Windows 上 `local("Microsoft YaHei")`（微软雅黑）基本都有。
 
 字体文件放 `assets/fonts/`，`.woff2` 比 `.ttf` 小一个量级，中文常用字子集化后 2~4 MB。
 
-## 5. Python 侧（转写 + 可选 librosa）
+## 5. Python 侧（只有两种情况需要）
 
-**主力方案**：`npx hyperframes audio` 已经用纯 JS 信号分析算出 BPM、节拍点、onset、段落、响度，**不需要 librosa**。第一版别装 Python。
+**主力方案**：`npx hyperframes audio` 已经用纯 JS 信号分析算出 BPM、节拍点、onset、段落、响度，**不需要 librosa**。第一版别装。
 
 **只在下列情况才装 Python**：
 
-| 需求 | 装什么 |
-|---|---|
-| 没有 SRT，要转写歌词 | `faster-whisper`（比 openai-whisper 快 4 倍，CPU 可跑） |
-| 要 librosa 的 `beat_track` 交叉验证 BPM | `librosa` |
-| 要画波形图/频谱图做参考 | `librosa` + `matplotlib` |
+| 需求 | 装什么 | 已验证 |
+|---|---|---|
+| 没有 LRC，要转写歌词 | `faster-whisper` | ✅ 实测装通并跑出正确结果 |
+| 用 musicdl 找音源（会**顺带拿到官方 LRC**） | `musicdl` | ✅ 实测装通、搜到、下到 FLAC+LRC |
+| 要 librosa 的 `beat_track` 交叉验证 BPM | `librosa` | 未测（hyperframes audio 已够用） |
 
 ```bash
-# 用 uv（快），不要污染系统 python
 uv venv --python 3.12 .venv
-uv pip install --python .venv/Scripts/python.exe faster-whisper
+uv pip install --python .venv/Scripts/python.exe musicdl faster-whisper
 ```
 
-> Windows 上 `uv` 偶发卡在 `scipy`/`onnxruntime` 的缓存锁（报 `Failed to acquire lock on the client cache`）。救法：`Get-Process uv | Stop-Process -Force` 后重试，或直接换 `pip`：
-> ```bash
-> .venv/Scripts/python.exe -m ensurepip --upgrade
-> .venv/Scripts/python.exe -m pip install faster-whisper
-> ```
+> **必须是 3.12 或更低**。3.13+ 上 `onnxruntime` / `ctranslate2` 的轮子还不全。
+> 本机是 3.14 主环境 + uv 拉 3.12 隔离环境，两者互不影响。
+
+### Windows 上 uv 的两个坑（实测踩到）
+
+**坑 A：缓存锁争用**
+```
+error: Failed to acquire lock on the client cache
+  Caused by: Timeout (900s) when waiting for lock on ...\scipy-...-win_amd64.lock
+```
+两个 uv 进程并发时必现，且第一个进程已经死了锁还留着。救法：
+
+```powershell
+Get-Process uv | Stop-Process -Force
+# 换独立缓存目录，最省事
+$env:UV_CACHE_DIR="<工程目录>\_env\uvcache"
+```
+
+**坑 B：`huggingface_hub` 下模型报 401**
+
+```
+RuntimeError: CAS Client Error: HTTP status client error (401 Unauthorized),
+domain: https://cas-server.xethub.hf.co/v2/reconstructions/...
+```
+
+这是 xet 加速端点被拒，不是你的网络坏了。**两个环境变量治好**：
+
+```powershell
+$env:HF_ENDPOINT="https://hf-mirror.com"   # 国内镜像
+$env:HF_HUB_DISABLE_XET="1"                # 关掉 xet，走普通下载
+$env:HF_HOME="<工程目录>\_env\hf"          # 别把几 GB 模型塞系统盘
+```
+
+设完再跑 `transcribe.py`，模型下载就通了。small ≈ 480 MB，medium ≈ 1.5 GB。
+
+### 本 skill 附带的两个脚本
+
+| 脚本 | 作用 | 前置 |
+|---|---|---|
+| `assets/scripts/lrc2srt.py` | LRC → SRT（**首选路线**） | 只要标准库 |
+| `assets/scripts/transcribe.py` | Whisper → SRT（兜底路线） | `faster-whisper` |
+
+```bash
+# 首选：musicdl 下来的 .lrc 直接转
+python assets/scripts/lrc2srt.py assets/audio/song.lrc lyrics.srt \
+  --audio-duration $(ffprobe -v error -show_entries format=duration -of csv=p=0 assets/audio/song.mp3) \
+  --merge
+
+# 兜底：没有 LRC 才转写（中文用 medium，别用 small）
+python assets/scripts/transcribe.py assets/audio/song.mp3 lyrics.srt \
+  --model medium --split comma
+```
 
 ## 6. 目录初始化（每首歌跑一次）
 

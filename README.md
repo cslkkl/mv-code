@@ -43,8 +43,8 @@
 | 步骤 | 产出 | 说明 |
 |---|---|---|
 | 0 环境 | 可跑的工程 | GSAP 本地内置、中文字体声明、模板一键复制 |
-| 0.5 音源 | `assets/audio/song.mp3` | 没有文件时用 [musicdl](https://github.com/CharlesPikachu/musicdl) 按歌名搜 |
-| ① 分析 | `song.md`、`lyrics.srt` | Whisper 转写 + 乐评检索 + BPM/节拍/段落/重音 / 低置信度歌词单独列出待确认 |
+| 0.5 音源 | `assets/audio/song.mp3` (+`song.lrc`) | 没有文件时用 [musicdl](https://github.com/CharlesPikachu/musicdl) 按歌名搜——**它顺带给你官方歌词** |
+| ① 分析 | `song.md`、`lyrics.srt` | 官方 LRC 转 SRT（首选）或 Whisper 兜底 + 乐评检索 + BPM/节拍/段落/重音 |
 | ② 画风 | 三张同框样图 | 像素游戏 / 纸艺拼贴 / 蜡笔手绘，各出 1920×1080 一张 |
 | ③ 角色 | `character.js` + 三视图 | 一次做对，全片复用：朝向 / 表情 / 动作 / 道具参数化 |
 | ④ 分镜 | `storyboard.md` | 一句歌词一镜，切点吸附节拍，抽象句换成具体动作 |
@@ -138,6 +138,9 @@ mv-code/
 │   ├── 08-review.md               八项质检（含量化命令）
 │   ├── hyperframes.md             契约 12 条 + 实测踩坑
 │   └── playbook.md                一页流程卡
+├── assets/scripts/
+│   ├── lrc2srt.py                 官方 LRC → SRT（首选路线）
+│   └── transcribe.py              Whisper 兜底（faster-whisper）
 ├── assets/templates/              ← 复制即用的骨架
 │   ├── index.html                 根 composition（场景 + 字幕层 + 音轨）
 │   ├── scene.html                 单场骨架（相机 + 分层 + 角色）
@@ -158,6 +161,9 @@ mv-code/
 
 在本机实测（hyperframes 0.8.214 / Node 24 / Chrome headless / Ryzen 9 7940H）：
 
+- **musicdl 装通并真实下载成功**（57 个平台客户端；歌名 → FLAC + 官方 LRC）
+- **LRC → SRT**：5:32 的歌 → 79 行 LRC → 72 条 SRT，时间单调无重叠
+- **Whisper 兜底跑通**（faster-whisper 1.2.1）；small/medium 准确率实测，中文必须 medium
 - 模板复制 → `check` **ok: true**，lint / runtime / layout / motion / contrast 全绿
 - 模板 → `render -q draft` → 6 秒 1920×1080 H.264 + AAC 成片
 - 三种画风都出过可看的帧
