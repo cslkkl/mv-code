@@ -209,6 +209,9 @@ npx hyperframes render -o out/song.mp4 -q delivery
 | Whisper small 错字多 | 模型太小 | 中文用 `--model medium` |
 | 一条字幕跨 2~3 句歌词 | Whisper 按语义分段，不是按歌词行 | `--split comma`，或改用 LRC |
 | uv 卡「Failed to acquire lock」 | 并发进程残留锁 | 杀 uv 进程，换独立 `UV_CACHE_DIR` |
+| 字幕一句都不出，check 却全绿 | 字幕层被加了 `class="clip"`，渲染器当片段管理、无 tween → 判不可见 | 字幕层用**纯 div**，不加 `.clip` / `data-*` |
+| 首屏字幕丢失 | 用 `fetch` 异步读歌词，渲染器先抓帧 | 歌词内联成 `assets/lib/lyrics.js`（`lrc2srt.py --js-out`） |
+| 字幕监听不生效 | `addEventListener` 写在 `await` 之后，事件已派发完 | 监听必须**同步注册**，再用 `tl.eventCallback("onUpdate")` 兜底 |
 
 ## 交付
 

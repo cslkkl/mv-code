@@ -210,6 +210,35 @@ ffmpeg -y -i 'seq/%03d.png' -vf "scale=640:360,tile=2x2:margin=14:padding=8:colo
 
 （本机也可以用 `npx hyperframes snapshot` 自带的 `contact-sheet.jpg`。）
 
+### 10. 字幕端到端（真实歌词，72 条）
+
+用官方 LRC 转出的 72 条 SRT，在 43 秒工程里逐帧验证：
+
+| 时间 | 应显示 | 实际 |
+|---|---|---|
+| 15.0s | （前奏，无歌词） | 无字幕 ✅ |
+| 19.5s | 又回到最初的起点 | ✅ 见 `docs/subtitle-19s.png` |
+| 27.0s | 我们终于来到了这一天 | ✅ |
+| 32.0s | 桌垫下的老照片 | ✅ 见 `docs/subtitle-32s.png` |
+
+**但第一版是失败的** —— 画面上一个字都没有，而 `check` 报 `ok: true`。
+排查过程与根因见下节「踩到但已修」。
+
+### 11. 字幕 bug 的排查（值得记住的排除法）
+
+| 步骤 | 现象 | 结论 |
+|---|---|---|
+| 1. 把字幕文字硬编码进 HTML | 渲染出的图**字节完全相同** | 不是数据/时间问题 |
+| 2. 清 `.hyperframes/` 缓存重渲 | 还是相同 | 不是缓存 |
+| 3. 同位置放一个**不带 `.clip`** 的红 `<div>` | **渲染出来了** | 是 `.clip` 的锅 |
+| 4. 去掉 `.clip` 与 `data-*` | 字幕正常显示 | 根因确认 |
+
+**根因**：渲染器把带 `.clip` 的元素当时间轴片段管理；字幕层没有任何 tween 作用其上，
+被判为不可见。**不报错、不告警、`check` 全绿。**
+
+顺带发现第二个问题：`MVSrt.load` 用 `fetch` 异步读 SRT，渲染器可能在 fetch 完成前抓帧。
+改成 `lrc2srt.py --js-out` 内联成 `assets/lib/lyrics.js`，同步可用，无竞态。
+
 ## 没跑通的
 
 ### `hyperframes transcribe`（Whisper 路径）

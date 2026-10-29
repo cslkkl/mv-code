@@ -135,6 +135,22 @@ def write_srt(rows, path):
             f.write(f"{i}\n{fmt(r['t0'])} --> {fmt(r['t1'])}\n{r['text']}\n\n")
 
 
+def write_js(rows, path, var_name="MV_LYRICS"):
+    """
+    输出内联 JS：window.MV_LYRICS = [...]; 
+    比 SRT 更可靠 —— 渲染器可能在你 fetch 完成前就抓帧，内联是同步的，没有竞态。
+    歌词才几 KB，内联没有任何损失。
+    """
+    import json
+    payload = [{"t0": round(r["t0"], 3), "t1": round(r["t1"], 3), "text": r["text"]} for r in rows]
+    body = (
+        "// 自动生成，勿手改。由 lyrics.srt 转出，供 composition 同步读取（避免 fetch 竞态）\n"
+        f"window.{var_name} = " + json.dumps(payload, ensure_ascii=False) + ";\n"
+    )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(body)
+
+
 def main():
     ap = argparse.ArgumentParser(description="LRC → SRT")
     ap.add_argument("lrc")
@@ -150,6 +166,8 @@ def main():
     ap.add_argument("--max-chars", type=int, default=20, help="合并后单条最多几个字")
     ap.add_argument("--max-sec", type=float, default=8.0, help="合并后单条最多几秒")
     ap.add_argument("--max-gap", type=float, default=2.2, help="两行起始间隔超过这么久就不合并")
+    ap.add_argument("--js-out", default=None,
+                    help="额外输出内联 JS（如 assets/lib/lyrics.js），composition 同步读取，无 fetch 竞态")
     a = ap.parse_args()
 
     if not os.path.exists(a.lrc):
@@ -164,6 +182,9 @@ def main():
                    merge=a.merge, max_chars=a.max_chars, max_sec=a.max_sec, max_gap=a.max_gap)
     write_srt(rows, a.out)
     print(f"完成：{len(rows)} 条字幕 → {a.out}", file=sys.stderr)
+    if a.js_out:
+        write_js(rows, a.js_out)
+        print(f"        内联 JS → {a.js_out}", file=sys.stderr)
 
 
 if __name__ == "__main__":

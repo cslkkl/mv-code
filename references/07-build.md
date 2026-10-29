@@ -53,20 +53,29 @@ tl.to("#char", { scale: 1.08, duration: 4.2 });    // ❌ 角色自己在动
 <div id="root" data-composition-id="main" …>
   <div id="s01" class="clip" … data-composition-src="compositions/s01.html"></div>
   …
-  <div id="subs" class="clip" data-start="0" data-duration="62" data-track-index="99"></div>
+  <!-- ⚠ 字幕层绝不加 class="clip" / data-start / data-duration / data-track-index -->
+  <div id="subs-wrap"><span id="subs"></span></div>
 </div>
 ```
 
 ```js
-// index.html 的脚本里
-window.addEventListener("hf-seek", async (e) => {
-  const t = e.detail.time;
-  const cue = MVSrt.at(cues, t);
-  subs.textContent = cue ? cue.text : "";
-});
+// 双路驱动，缺一条就可能不显示
+tl.eventCallback("onUpdate", () => paint(tl.time()));      // 时间轴自己，最可靠
+window.addEventListener("hf-seek", (e) => paint(e.detail.time));  // 必须同步注册
 ```
 
-字体：`font-size: 56px`、`line-height: 1.4`、`text-shadow: 0 2px 0 rgba(0,0,0,.55)`（深色底）或 `-webkit-text-stroke: 2px #fff`（浅色底）。
+**两条硬规则**（违反后 `check` 依然全绿，但画面里一个字都没有）：
+
+1. **字幕层不加 `.clip`** —— 渲染器把 `.clip` 当时间轴片段，字幕层没有 tween 作用其上 → 判为不可见。
+   实测：加 `.clip` 字节级完全一致（不渲染）；去掉立刻出现。
+2. **歌词内联成 `assets/lib/lyrics.js`** —— 用 `fetch` 读 SRT 会与渲染器的抓帧抢跑，首帧字幕丢失。
+   ```bash
+   python assets/scripts/lrc2srt.py song.lrc lyrics.srt --audio-duration 371 --merge \
+     --js-out assets/lib/lyrics.js
+   ```
+
+字体：`font-size: 56px`、`line-height: 1.4`、`background: rgba(12,10,9,.42)` 衬底 + `text-shadow: 0 2px 0 rgba(0,0,0,.55)`。
+衬底不是装饰 —— `check` 的 `contrast` 段量的是文字与背后像素，浅底画面下只靠 text-shadow 会判 `contrast_aa_failure`（1.75:1）。
 
 ## 逐镜实现顺序
 

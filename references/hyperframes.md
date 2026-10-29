@@ -109,6 +109,45 @@ renderAt(0);      // 首帧也要画，否则第 0 帧是空白
 
 用 `requestAnimationFrame` 或 `setInterval` 当钟 → 渲染出来的每一帧都一样（渲染器只 seek，不跑时间）。
 
+### 坑 6：字幕层加 `class="clip"` → 整层不渲染，且不报错
+
+```html
+<!-- ❌ 字幕一句都不出，check 还是 ok:true -->
+<div id="subs-wrap" class="clip" data-start="0" data-duration="43" data-track-index="99">
+  <span id="subs"></span>
+</div>
+
+<!-- ✅ 纯定位 div，没有任何 data-* -->
+<div id="subs-wrap"><span id="subs"></span></div>
+```
+
+渲染器把带 `.clip` 的元素当时间轴片段管理，而字幕层没有 tween 作用在它上面
+→ 判为「不可见」。**不报错、check 全绿，只是画面里没有字。**
+
+实测排查过程（值得记住的排除法）：
+1. 把字幕文字硬编码进 HTML → 渲染出来的图**字节完全相同** ⇒ 不是数据问题
+2. 清 `.hyperframes/` 缓存重渲 → 还是相同 ⇒ 不是缓存
+3. 在同位置放一个不带 `.clip` 的红色 `<div>` → **渲染出来了** ⇒ 是 `.clip` 的锅
+4. 去掉 `.clip` 与 `data-*` → 字幕正常
+
+同一位置的非 `.clip` 元素能渲染，说明不是层级、不是定位、不是对比度。
+
+### 坑 7：字幕用 `fetch` 异步读 → 首屏字幕丢失
+
+渲染器可能在 `fetch` 完成前就抓帧。歌词才几 KB，**内联成 JS 最稳**：
+
+```bash
+python assets/scripts/lrc2srt.py song.lrc lyrics.srt --audio-duration 371 --merge \
+  --js-out assets/lib/lyrics.js
+```
+
+```html
+<script src="assets/lib/lyrics.js"></script>   <!-- window.MV_LYRICS，同步可用 -->
+```
+
+同时把监听同步注册（不要在 `await` 之后才 addEventListener），否则渲染器的
+`hf-seek` 会在监听器注册前就派发完。
+
 ## 4. 常用命令
 
 ```bash

@@ -1,0 +1,32 @@
+fix: 字幕层被 .clip 判为不可见，一句字幕都不出
+
+用户问「歌词呢」，去验证才发现：歌词一直能拿到（72 条官方 LRC 转出的 SRT），
+但渲染成片时画面上一句字幕都没有，而 check 始终报 ok: true。
+
+根因：渲染器把带 class="clip" 的元素当时间轴片段管理。字幕层没有任何 tween
+作用在它上面，于是被判为「不可见」——不报错、不告警、check 全绿。
+
+排查用的排除法（记进 hyperframes.md 坑 6）：
+1. 把字幕文字硬编码进 HTML → 渲染出的图字节完全相同 ⇒ 不是数据问题
+2. 清 .hyperframes/ 缓存重渲 → 还是相同 ⇒ 不是缓存
+3. 同位置放一个不带 .clip 的红 div → 渲染出来了 ⇒ 是 .clip 的锅
+4. 去掉 .clip 与 data-* → 字幕正常
+
+顺带修掉第二个问题：MVSrt.load 用 fetch 异步读 SRT，渲染器可能在 fetch 完成前
+就抓帧，首屏字幕丢失。改为 lrc2srt.py --js-out 内联成 assets/lib/lyrics.js，
+同步可用，无竞态。监听也改成同步注册 + tl.eventCallback("onUpdate") 双路兜底
+（原来 addEventListener 写在 await 之后，事件全错过）。
+
+改动：
+- assets/templates/index.html  字幕层去 .clip/.data-*；歌词优先读内联 MV_LYRICS；
+                                监听同步注册；onUpdate + hf-seek 双路驱动
+- assets/scripts/lrc2srt.py    新增 --js-out，直接产内联 JS
+- references/hyperframes.md    新增坑 6（.clip 吞字幕）、坑 7（fetch 竞态）
+- references/07-build.md       字幕章节改成双路驱动 + 两条硬规则
+- references/01-song.md        LRC 转换命令带 --js-out
+- SKILL.md                     踩坑表补 3 条
+- docs/verification.md         新增第 10、11 节：真实歌词逐帧验证 + 排查过程
+- docs/subtitle-*.png          字幕正确显示的实拍证据
+
+实测：19.5s「又回到最初的起点」、27s「我们终于来到了这一天」、
+32s「桌垫下的老照片」，15s 前奏无字幕，全部正确。

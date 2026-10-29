@@ -21,7 +21,8 @@
 
 ```bash
 python assets/scripts/lrc2srt.py assets/audio/song.lrc lyrics.srt \
-  --audio-duration 371.08 --merge
+  --audio-duration 371.08 --merge \
+  --js-out assets/lib/lyrics.js          # 同时出内联 JS，渲染更稳
 ```
 
 - **LRC 只有开始时间、没有结束时间**：每句 `t1` 由下一句 `t0` 推出，最后一句用 `--audio-duration` 兜住

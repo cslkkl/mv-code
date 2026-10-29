@@ -86,8 +86,12 @@
         data-height="1080"
       ></div>
 
-      <!-- 字幕（不随镜头动） -->
-      <div id="subs-wrap" class="clip" data-start="0" data-duration="6" data-track-index="99">
+      <!-- 字幕（不随镜头动）
+           ⚠ 绝对不要加 class="clip" / data-start / data-duration / data-track-index。
+           渲染器会把带 .clip 的元素当时间轴片段管理，而字幕层没有任何 tween 作用在它上面，
+           结果整层被判为「不可见」—— 画面上一句字幕都不出，且不报错。
+           实测：加 .clip → 字幕完全不渲染；去掉 → 正常。 -->
+      <div id="subs-wrap">
         <span id="subs"></span>
       </div>
 
@@ -106,21 +110,25 @@
       // 根时间轴：只做字幕的进出，场次动画在各场景文件里
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-
-      // 字幕淡入淡出交给 CSS 过渡之外的显式 tween（避免与逐帧文本更新打架）
       window.__timelines["main"] = tl;
 
-      // ---- 字幕驱动：逐帧从 SRT 取当前句 ----
-      (async function () {
+      // ---- 字幕驱动：逐帧从歌词取当前句 ----
+      //
+      // 三条触发路径都要挂上，缺一条就会「字幕不显示」：
+      //   1. 时间轴自己的 onUpdate —— 渲染器逐帧 seek 时间轴时一定触发，最可靠
+      //   2. hf-seek 事件 —— 部分版本会派发，canvas 类也用它
+      //   3. 歌词就绪后立即补画一次 —— 否则加载期间那几帧是空白
+      //
+      // 两个踩过的坑：
+      //   a) 把 addEventListener 写在 await 之后 → 渲染器先 seek、监听器后注册，
+      //      事件全部错过，画面上一句字幕都不出。监听必须同步注册。
+      //   b) 用 fetch 异步读 lyrics.srt → 渲染器可能在 fetch 完成前就抓帧。
+      //      歌词才几 KB，直接内联成 assets/lib/lyrics.js（见 lrc2srt.py --js-out）最稳。
+      (function () {
         const subsEl = document.getElementById("subs");
         let cues = [];
-        try {
-          cues = await MVSrt.load("assets/lyrics.srt", { gap: 0.12 });
-        } catch (e) {
-          console.warn("没有 lyrics.srt，字幕关闭", e);
-        }
-
         let last = null;
+
         function paint(t) {
           if (!cues.length) return;
           const cue = MVSrt.at(cues, t);
@@ -131,8 +139,19 @@
           }
         }
 
-        window.addEventListener("hf-seek", (e) => paint(e.detail.time));
-        paint(0);
+        tl.eventCallback("onUpdate", function () { paint(tl.time()); });
+        window.addEventListener("hf-seek", function (e) { paint(e.detail.time); });
+
+        // 优先用内联的 window.MV_LYRICS（同步，无竞态）
+        if (window.MV_LYRICS && window.MV_LYRICS.length) {
+          cues = window.MV_LYRICS;
+          paint(tl.time());
+        } else {
+          // 退路：没有内联文件就读 SRT（可能因 fetch 竞态丢首帧字幕）
+          MVSrt.load("assets/lyrics.srt", { gap: 0.12 })
+            .then(function (c) { cues = c; paint(tl.time()); })
+            .catch(function (e) { console.warn("没有歌词，字幕关闭", e); });
+        }
       })();
     </script>
   </body>
