@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="assets/lib/gsap.min.js"></script>
+    <script src="assets/lib/srt.js"></script>
+    <style>
+      @font-face { font-family: "Noto Sans SC"; src: local("Microsoft YaHei"); }
+
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        background: var(--mv-ground, #1b1a17);
+      }
+
+      /* 场次宿主：必须 position:absolute; inset:0，否则会塌缩成 0 高 */
+      .scene-host { position: absolute; inset: 0; }
+
+      /* 字幕：根 composition 里，画面下方，永远在最上层，不参与任何 transform */
+      #subs-wrap {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 96px;
+        text-align: center;
+        z-index: 99;
+        pointer-events: none;
+      }
+      /* 衬底：WCAG 对比度靠它兜底，不能只靠 text-shadow
+         （check 的 contrast 段量的是文字与背后像素，浅底画面下 1.75:1 会被判 error） */
+      #subs {
+        display: inline-block;
+        max-width: 82%;
+        padding: 0.06em 0.42em 0.14em;
+        border-radius: 6px;
+        background: rgba(12, 10, 9, 0.42);
+        font-family: "Noto Sans SC", sans-serif;
+        font-size: 56px;
+        line-height: 1.4;
+        letter-spacing: 0.04em;
+        color: #fffdf7;
+        text-shadow:
+          0 2px 0 rgba(0, 0, 0, 0.55),
+          0 0 18px rgba(0, 0, 0, 0.45);
+      }
+      /* 字幕为空时不显示衬底 */
+      #subs:empty { display: none; }
+    </style>
+  </head>
+  <body>
+    <!--
+      用法：
+      1. 把 data-duration 改成 ffprobe 量到的音频时长（三处：根、字幕层、音轨）
+      2. 按 storyboard.md 复制 .scene-host，data-start/data-duration 严格衔接
+         （每加一个场景就要有对应的 compositions/sNN.html，否则 check 报 missing_or_empty_sub_composition）
+      3. data-composition-id 必须与 compositions/<file>.html 里的 id 一致
+    -->
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="6"
+      data-width="1920"
+      data-height="1080"
+      data-fps="30"
+      data-composition-variables='[
+        {"id":"mv-ground","type":"color","label":"底色","default":"#1b1a17"},
+        {"id":"mv-ink","type":"color","label":"主色","default":"#f4efe4"},
+        {"id":"mv-accent","type":"color","label":"点缀","default":"#e0693a"}
+      ]'
+    >
+      <!-- 场次（按分镜顺序，时间无缝衔接） -->
+      <div
+        id="s01"
+        class="scene-host clip"
+        data-composition-id="s01"
+        data-composition-src="compositions/s01.html"
+        data-start="0"
+        data-duration="6"
+        data-track-index="0"
+        data-track-kind="graphics"
+        data-width="1920"
+        data-height="1080"
+      ></div>
+
+      <!-- 字幕（不随镜头动） -->
+      <div id="subs-wrap" class="clip" data-start="0" data-duration="6" data-track-index="99">
+        <span id="subs"></span>
+      </div>
+
+      <!-- 音轨：data-timeline-role="music" 才能跑 hyperframes beats -->
+      <audio
+        id="music"
+        data-timeline-role="music"
+        data-start="0"
+        data-duration="6"
+        src="assets/audio/song.mp3"
+        data-volume="1"
+      ></audio>
+    </div>
+
+    <script>
+      // 根时间轴：只做字幕的进出，场次动画在各场景文件里
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // 字幕淡入淡出交给 CSS 过渡之外的显式 tween（避免与逐帧文本更新打架）
+      window.__timelines["main"] = tl;
+
+      // ---- 字幕驱动：逐帧从 SRT 取当前句 ----
+      (async function () {
+        const subsEl = document.getElementById("subs");
+        let cues = [];
+        try {
+          cues = await MVSrt.load("assets/lyrics.srt", { gap: 0.12 });
+        } catch (e) {
+          console.warn("没有 lyrics.srt，字幕关闭", e);
+        }
+
+        let last = null;
+        function paint(t) {
+          if (!cues.length) return;
+          const cue = MVSrt.at(cues, t);
+          const text = cue ? cue.text : "";
+          if (text !== last) {
+            subsEl.textContent = text;
+            last = text;
+          }
+        }
+
+        window.addEventListener("hf-seek", (e) => paint(e.detail.time));
+        paint(0);
+      })();
+    </script>
+  </body>
+</html>

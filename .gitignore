@@ -1,0 +1,32 @@
+# 依赖与构建产物
+node_modules/
+.pnpm-store/
+
+# HyperFrames / 预览
+.hyperframes/
+beats/
+renders/
+
+# 渲染产物（体积大，且可从源码重出）
+out/
+*.mp4
+*.webm
+*.mov
+
+# 本机验证用的临时工程（不是 skill 的一部分）
+_verify/
+
+# 字体文件（体积大；需要时按 references/00-setup.md 自行放入）
+*.woff2
+*.ttf
+*.otf
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/
+.idea/
+*.swp

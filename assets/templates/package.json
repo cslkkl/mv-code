@@ -1,0 +1,12 @@
+{
+  "name": "mv-song",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.214 preview",
+    "check": "npx --yes hyperframes@0.8.214 check",
+    "snapshot": "npx --yes hyperframes@0.8.214 snapshot",
+    "render": "npx --yes hyperframes@0.8.214 render",
+    "lint": "npx --yes hyperframes@0.8.214 lint"
+  }
+}

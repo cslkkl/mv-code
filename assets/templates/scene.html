@@ -1,0 +1,123 @@
+<template>
+  <!--
+    场景模板（复制到 compositions/sNN.html 再改）
+
+    结构铁律（07-build）：
+      #root 里只有一个相机容器 #camera，
+      背景/远景/中景/角色/道具全在 #camera 里 —— 一起随镜头运动，不分层叠加。
+
+    id 三处必须完全一致：
+      1. index.html 里宿主的 data-composition-id
+      2. 这里的 data-composition-id
+      3. window.__timelines["..."] 的键
+
+    这份模板带一个能跑通的最小画面（纸艺底 + 太阳 + 角色），
+    直接 `npm run check` 应当是 ok:true。删空内容会触发 check 的 canvas_covered。
+  -->
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #d8c9a8;
+    }
+    #camera {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 55%;   /* 运镜支点放在偏下，符合人眼习惯 */
+    }
+    .layer { position: absolute; inset: -2%; }   /* 留 2% 出血；刻意溢出用 data-layout-allow-overflow */
+
+    /* 旧纸底纹（纯 CSS，不引图片） */
+    #ground {
+      background-color: #d8c9a8;
+      background-image:
+        repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.035) 0 1px, transparent 1px 3px),
+        repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.02) 0 1px, transparent 1px 4px);
+      box-shadow: inset 0 0 160px rgba(80, 60, 30, 0.22);
+    }
+
+    /* 剪纸太阳：白边 + 两层投影 */
+    #sun {
+      position: absolute;
+      left: 1180px;
+      top: 236px;
+      width: 236px;
+      height: 236px;
+      border-radius: 50%;
+      background: #b8452e;
+      border: 5px solid #fbf7ee;
+      box-sizing: border-box;
+      filter: drop-shadow(2px 3px 2px rgba(0, 0, 0, 0.35))
+              drop-shadow(0 18px 26px rgba(0, 0, 0, 0.10));
+    }
+
+    #char { position: absolute; inset: 0; }
+    #char svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  </style>
+
+  <div id="root" data-composition-id="s01" data-width="1920" data-height="1080">
+    <div id="camera">
+      <div class="layer" id="ground" data-layout-allow-overflow></div>
+      <div class="layer" id="sun" style="position:absolute" data-layout-allow-overflow></div>
+      <div class="layer" id="char"></div>
+      <div class="layer" id="prop"></div>
+      <!-- 转场用的前景遮挡条（不用就删）；初始在画外 -->
+      <div id="wipe" data-layout-allow-overflow
+           style="position:absolute; top:-10%; height:120%; width:900px;
+                  left:-1200px; background:#2a2622;"></div>
+    </div>
+  </div>
+
+  <script src="compositions/character.js"></script>
+  <script>
+    (function () {
+      const DUR = 6.0;            // ← 改成本镜的 data-duration
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // ---- 唯一的运镜：一个镜头只动 #camera 一次，一个方向 ----
+      tl.fromTo(
+        "#camera",
+        { scale: 1.0, x: 0, y: 0 },
+        { scale: 1.06, x: -22, y: -9, duration: DUR, ease: "none" },
+        0
+      );
+
+      // ---- 角色：每一帧都由 character.js 画，参数随时间变 ----
+      const charBox = document.getElementById("char");
+
+      function paint(t) {
+        // 换画风只改这一个函数：
+        //   paper  → MVChar.svgPaper
+        //   pixel  → MVChar.drawPixel（画到 canvas）
+        //   crayon → MVChar.drawCrayon（p5.brush 环境里）
+        charBox.innerHTML = MVChar.svgPaper({
+          x: 760,
+          y: 900,
+          scale: 12,          // 角色按 320x180 设计，1920x1080 里放大 12 倍（绕脚底缩放，不会飘）
+          facing: t < 2.4 ? "front" : "right",
+          expression: t > 3.2 ? "shy" : "neutral",
+          action: t < 2.4 ? "idle" : "walk",
+          prop: null,
+          t: t,
+          dt: 0.4,
+          style: "paper",
+          palette: ["#2a2622", "#8a7f6d", "#b8452e", "#e8dcc4", "#d8c9a8"],
+          vbw: 1920,
+          vbh: 1080,
+        });
+      }
+
+      window.addEventListener("hf-seek", (e) => paint(e.detail.time));
+      paint(0);
+
+      // ---- 前景扫过（转场时用，不用就删）----
+      // tl.fromTo("#wipe", { x: -1200 }, { x: 3000, duration: 0.36, ease: "power1.inOut" }, DUR - 0.18);
+
+      // 最后注册（契约第 3 条）
+      window.__timelines["s01"] = tl;
+    })();
+  </script>
+</template>

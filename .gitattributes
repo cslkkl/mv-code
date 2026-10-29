@@ -1,0 +1,8 @@
+# 统一换行：仓库内一律 LF，Windows 检出也不改
+* text=auto eol=lf
+
+# 二进制，不要试图 diff
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.mp3 binary

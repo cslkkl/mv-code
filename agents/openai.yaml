@@ -1,0 +1,7 @@
+interface:
+  display_name: "MV Code (代码 MV)"
+  short_description: "一个歌名 → 代码绘制的 MV（HyperFrames 渲染）"
+  brand_color: "#B8452E"
+  default_prompt: "$mv-code: 给《歌名》做支 MV"
+policy:
+  allow_implicit_invocation: true
