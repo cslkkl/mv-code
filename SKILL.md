@@ -28,7 +28,7 @@ description: 把「歌名」直接做成代码绘制的 MV（mp4）。当用户�
 | 画幅 | 1920x1080 @ 30fps（要竖屏就 1080x1920） |
 | 时长 | 全曲；超过 4 分钟先做「精华段」（见下） |
 | 音源 | 先问一句有没有本地文件/链接，同时直接开始 musicdl 搜 |
-| 歌词 | 有 SRT 就用；没有就 Whisper 转写 |
+| 歌词 | 优先用 musicdl 顺带下的 `.lrc`；没有再用 Whisper |
 | 工程根 | `<cwd>/mv-<歌名拼音>/` |
 
 **全流程只允许三个问句**，其余一律自己决定：
@@ -70,6 +70,19 @@ description: 把「歌名」直接做成代码绘制的 MV（mp4）。当用户�
 → ⑤ 转场方案  →  ⑥ 关键帧总览  →  ⑦ 渲染成片  →  ⑧ 八项质检
 ```
 
+### 歌词三条路，按这个顺序
+
+1. **musicdl 下来的 `.lrc` → SRT**（首选）。下载时会顺带给你官方歌词，与演唱精确对齐。
+   实测同一段：官方 LRC 全对，Whisper small 三处错字。
+   ```bash
+   python assets/scripts/lrc2srt.py assets/audio/song.lrc lyrics.srt --audio-duration <秒> --merge
+   ```
+2. **用户已有 SRT** —— 直接用，检查条数与末条时间。
+3. **Whisper 兜底** —— 没有 LRC 才走，且中文必须 `--model medium`（small 错字明显）。
+   ```bash
+   python assets/scripts/transcribe.py assets/audio/song.mp3 lyrics.srt --model medium --split comma
+   ```
+
 每步的详细执行说明在 `references/` 下，**做哪步读哪步**：
 
 | 步骤 | 产出 | 读这个 |
@@ -100,6 +113,8 @@ mv-<name>/
   QA.md                 # 质检报告
   assets/
     audio/song.mp3
+    audio/song.lrc      # musicdl 顺带下来的官方歌词，比转写准
+    scripts/            # lrc2srt.py / transcribe.py
     lib/gsap.min.js     # 本地内置，别用 CDN（见 00-setup）
     lib/srt.js          # 从 assets/templates/srt.js 复制
     fonts/              # 中文字体若需 @font-face
@@ -188,6 +203,12 @@ npx hyperframes render -o out/song.mp4 -q delivery
 | 道具遮脸 | 质检第 4 项不达标 | 道具 `y = Math.max(hand.y, headTop + 2)` |
 | 整屏叠化 | 廉价感 | 只叠局部元素，或改硬切 |
 | `motion.dead_stretch` | `check` 直接告警「3 秒无变化」 | 角色 idle 也要有呼吸，相机恒定缓推 |
+| musicdl 返回不是 dict | `info["songname"]` 报 KeyError | 用 `info.song_name`，先判 `with_valid_download_url` |
+| HF 下模型报 401 | `CAS Client Error ... 401 Unauthorized` | `HF_HUB_DISABLE_XET=1` + `HF_ENDPOINT=https://hf-mirror.com` |
+| Whisper 出繁体字 | 中文默认输出繁体 | `initial_prompt` 写简体（脚本已内置） |
+| Whisper small 错字多 | 模型太小 | 中文用 `--model medium` |
+| 一条字幕跨 2~3 句歌词 | Whisper 按语义分段，不是按歌词行 | `--split comma`，或改用 LRC |
+| uv 卡「Failed to acquire lock」 | 并发进程残留锁 | 杀 uv 进程，换独立 `UV_CACHE_DIR` |
 
 ## 交付
 
@@ -222,12 +243,16 @@ npx hyperframes render -o out/song.mp4 -q delivery
 | 蜡笔风（p5 2.3.4 + p5.brush 3.0.0） | 笔触毛边、纸纹擦笔、`brush.instance(p)` 路径可用 |
 | `hyperframes audio` 测 BPM/节拍 | 120 BPM 样本 → 120.0、confidence 0.991、119 个节拍点 |
 | `hyperframes beats` | 需 `<audio data-timeline-role="music">`，加上后正常产出 `beats/*.json` |
+| **musicdl 真实下载** | ✅ 装通（57 平台）、搜到、下到 FLAC 192kHz/245MB + **官方 LRC** |
+| **LRC → SRT** | ✅ 5:32 的歌 → 79 行 LRC → 72 条 SRT，时间单调无重叠 |
+| **Whisper 转写** | ✅ faster-whisper 1.2.1 跑通；small/medium 准确率实测对比，中文必须 medium |
 | 字幕对齐 | `srt.js` 解析 + `tighten(0.12)`，逐帧取句正确，句间留 0.12s 空档 |
 | 静止段检测 | `tblend=difference` 的 YAVG 法：静态画面 0.0000、正常画面 3~13 |
 | 响度比对 | 源 -34.1 / 成片 -31.1 LUFS，差 3.0 LU 判超标；重封装音轨后回到 -34.1 |
 
-**未在本机跑通的**（文档按官方资料写，第一次用要自己确认）：
+**仍未在本机验证的**（文档按官方资料写，第一次用要自己确认）：
 
-- `hyperframes transcribe` 的 Whisper 路径：本机 `doctor` 报 `whisper-cpp: Not found`，命令直接跳过。没有 SRT 时走 `faster-whisper` 的 Python 路径（见 `01-song.md`）。
-- `musicdl` 的真实下载：本机网络下 `uv`/`pip` 常卡在 `scipy`/`onnxruntime` 的缓存锁。命令按官方 README 写；装不上就让用户直接给文件，或换 `pip` 重试。
-- 3 分钟以上的长片渲染耗时：只有 6 秒样本的实测数，长片按 `07-build.md` 的量级自行加压。
+- `hyperframes transcribe` 本身：依赖 whisper-cpp 二进制，本机没有。**已用 `assets/scripts/transcribe.py` 绕开**，那条路实测可用。
+- `hyperframes publish` / `cloud` / `lambda` 等部署命令（本 skill 不用）。
+- macOS / Linux 上的表现（全部在 Windows 11 上做）。
+- 3 分钟以上、40+ 镜头的长片渲染耗时（只有 6 秒样本的实测数）。
